@@ -45,7 +45,7 @@ test('Correct Flywheel behaviour at initialisation', () => {
   testDragFactor(flywheel, 0.00011)
   testIsDwelling(flywheel, false)
   testIsUnpowered(flywheel, false)
-  testIsPowered(flywheel, true)
+  testIsPowered(flywheel, false)
 })
 
 // Test behaviour for one datapoint
@@ -67,7 +67,7 @@ test('Correct Flywheel behaviour for a noisefree stroke', () => {
   testDragFactor(flywheel, 0.00011)
   testIsDwelling(flywheel, false)
   testIsUnpowered(flywheel, false)
-  testIsPowered(flywheel, true)
+  testIsPowered(flywheel, false)
   flywheel.pushValue(0.011221636)
   flywheel.pushValue(0.011175504)
   flywheel.pushValue(0.01116456)
@@ -172,7 +172,7 @@ test('Correct Flywheel behaviour at maintainStateOnly', () => {
   testDragFactor(flywheel, 0.00011)
   testIsDwelling(flywheel, false)
   testIsUnpowered(flywheel, false)
-  testIsPowered(flywheel, true)
+  testIsPowered(flywheel, false)
   flywheel.maintainStateOnly()
   flywheel.pushValue(0.011221636)
   flywheel.pushValue(0.011175504)
@@ -270,8 +270,8 @@ test('Correct Flywheel behaviour with a NordicTrack RX800', async () => {
   // Inject 10 strokes
   await replayRowingSession(flywheel.pushValue, { filename: 'recordings/RX800.csv', realtime: false, loop: false })
 
-  testSpinningTime(flywheel, 22.65622640199999)
-  testAngularPosition(flywheel, 1446.7034169780998)
+  testSpinningTime(flywheel, 22.612226401999987)
+  testAngularPosition(flywheel, 1443.5618243245099)
   // As we don't detect strokes here (this is a function of Rower.js, the dragcalculation shouldn't be triggered
   testDragFactor(flywheel, (rowerProfiles.NordicTrack_RX800.dragFactor / 1000000))
 })
@@ -285,10 +285,25 @@ test('Correct Flywheel behaviour with a full session on a SportsTech WRX700', as
 
   // Inject 846 strokes
   await replayRowingSession(flywheel.pushValue, { filename: 'recordings/WRX700_2magnets_session.csv', realtime: false, loop: false })
-  testSpinningTime(flywheel, 2342.741183077012)
-  testAngularPosition(flywheel, 37337.82868791469)
+  testSpinningTime(flywheel, 2340.0100514160117)
+  testAngularPosition(flywheel, 37325.26231730033)
   // The dragfactor should remain static
   testDragFactor(flywheel, (rowerProfiles.Sportstech_WRX700.dragFactor / 1000000))
+})
+
+test('A full session for a Concept2 Model C should produce plausible results', async () => {
+  const flywheel = createFlywheel(deepMerge(rowerProfiles.DEFAULT, rowerProfiles.Concept2_Model_C))
+  testSpinningTime(flywheel, 0)
+  testAngularPosition(flywheel, 0)
+  testDragFactor(flywheel, (rowerProfiles.Concept2_Model_C.dragFactor / 1000000))
+  flywheel.maintainStateAndMetrics()
+
+  await replayRowingSession(flywheel.pushValue, { filename: 'recordings/Concept2_Model_C.csv', realtime: false, loop: false })
+
+  testSpinningTime(flywheel, 181.47141999999985)
+  testAngularPosition(flywheel, 15636.753834467596)
+  // As we don't detect strokes here (this is a function of Rower.js, the dragcalculation shouldn't be triggered
+  testDragFactor(flywheel, (rowerProfiles.Concept2_Model_C.dragFactor / 1000000))
 })
 
 test('A full session for a Concept2 RowErg should produce plausible results', async () => {
@@ -348,10 +363,8 @@ function testIsPowered (flywheel, expectedValue) {
   assert.ok(flywheel.isPowered() === expectedValue, `isPowered should be ${expectedValue} at ${flywheel.spinningTime()} sec, is ${flywheel.isPowered()}`)
 }
 
-/*
-function reportAll (flywheel) {
+function reportAll (flywheel) { // eslint-disable-line no-unused-vars
   assert.ok(0, `deltaTime: ${flywheel.deltaTime()}, spinningTime: ${flywheel.spinningTime()}, ang. pos: ${flywheel.angularPosition()}, ang. vel: ${flywheel.angularVelocity()}, Ang. acc: ${flywheel.angularAcceleration()}, Torque: ${flywheel.torque()}, DF: ${flywheel.dragFactor()}`)
 }
-*/
 
 test.run()

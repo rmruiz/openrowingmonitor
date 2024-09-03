@@ -1,6 +1,6 @@
 'use strict'
 /*
-  Open Rowing Monitor, https://github.com/laberning/openrowingmonitor
+  Open Rowing Monitor, https://github.com/JaapvanEkris/openrowingmonitor
 
   The Rowing Engine models the physics of a real rowing boat.
   It takes impulses from the flywheel of a rowing machine and estimates
@@ -17,7 +17,7 @@ import { createCurveMetrics } from './utils/curveMetrics.js'
 
 const log = loglevel.getLogger('RowingEngine')
 
-function createRower (rowerSettings) {
+export function createRower (rowerSettings) {
   const flywheel = createFlywheel(rowerSettings)
   const sprocketRadius = rowerSettings.sprocketRadius / 100
   const driveHandleForce = createCurveMetrics()
@@ -53,19 +53,29 @@ function createRower (rowerSettings) {
       case (_strokeState === 'Stopped'):
         // We are in a stopped state, so don't do anything
         break
-      case (_strokeState === 'WaitingForDrive' && flywheel.isPowered() && flywheel.isAboveMinimumSpeed()):
-        // We change into the "Drive" phase since were waiting for a drive phase, and we see a clear force exerted on the flywheel
-        log.debug(`*** Rowing (re)started with a DRIVE phase at time: ${flywheel.spinningTime().toFixed(4)} sec`)
-        // As we are not certain what caused the "WaitingForDrive" (a fresh start or a restart after pause),, we explicitly start the flywheel maintaining metrics again
+      case (_strokeState === 'WaitingForDrive' && flywheel.isAboveMinimumSpeed()):
+        // We are above the minimum speed, so we can leave the WaitingForDrive state
+        // As we are not certain what caused the "WaitingForDrive", we explicitly start the flywheel maintaining metrics again
         flywheel.maintainStateAndMetrics()
-        _strokeState = 'Drive'
-        startDrivePhase()
+        if (flywheel.isUnpowered()) {
+          // We change into the "REcovery" phase, as somehow there is no clear force exerted on the flywheel
+          log.debug(`*** Rowing (re)started with a RECOVERY phase at time: ${flywheel.spinningTime().toFixed(4)} sec`)
+          _totalNumberOfStrokes++
+          _strokeState = 'Recovery'
+          startRecoveryPhase()
+        } else {
+          // We change into the "Drive" phase since were waiting for a drive phase, and we see a clear force exerted on the flywheel
+          log.debug(`*** Rowing (re)started with a DRIVE phase at time: ${flywheel.spinningTime().toFixed(4)} sec`)
+          _strokeState = 'Drive'
+          startDrivePhase()
+        }
         break
       case (_strokeState === 'WaitingForDrive'):
         // We can't change into the "Drive" phase since we are waiting for a drive phase, but there isn't a clear force exerted on the flywheel. So, there is nothing more to do
         break
-      case (_strokeState === 'Drive' && ((flywheel.spinningTime() - drivePhaseStartTime) >= rowerSettings.minimumDriveTime) && flywheel.isUnpowered()):
+      case (_strokeState === 'Drive' && ((flywheel.spinningTime() - drivePhaseStartTime) >= rowerSettings.minimumDriveTime || _totalNumberOfStrokes < 1) && flywheel.isUnpowered()):
         // We change into the "Recovery" phase since we have been long enough in the Drive phase, and we see a clear lack  of power exerted on the flywheel
+        // In the first stroke, we might not exceed the minimumdrivetime in the first stroke, so we shouldn't allow it to limit us.
         log.debug(`*** RECOVERY phase started at time: ${flywheel.spinningTime().toFixed(4)} sec`)
         _strokeState = 'Recovery'
         endDrivePhase()
@@ -325,6 +335,9 @@ function createRower (rowerSettings) {
   function reset () {
     _strokeState = 'WaitingForDrive'
     flywheel.reset()
+    driveHandleForce.reset()
+    driveHandleVelocity.reset()
+    driveHandlePower.reset()
     _totalNumberOfStrokes = -1.0
     drivePhaseStartTime = 0.0
     drivePhaseStartAngularPosition = 0.0
@@ -372,5 +385,3 @@ function createRower (rowerSettings) {
     reset
   }
 }
-
-export { createRower }

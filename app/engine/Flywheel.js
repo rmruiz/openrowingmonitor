@@ -1,6 +1,6 @@
 'use strict'
 /*
-  Open Rowing Monitor, https://github.com/laberning/openrowingmonitor
+  Open Rowing Monitor, https://github.com/JaapvanEkris/openrowingmonitor
 
   This models the flywheel with all of its attributes, which we can also test for being powered
 
@@ -22,27 +22,27 @@
 
 import loglevel from 'loglevel'
 import { createStreamFilter } from './utils/StreamFilter.js'
-import { createOLSLinearSeries } from './utils/OLSLinearSeries.js'
 import { createTSLinearSeries } from './utils/FullTSLinearSeries.js'
 import { createTSQuadraticSeries } from './utils/FullTSQuadraticSeries.js'
 import { createWeighedSeries } from './utils/WeighedSeries.js'
 
 const log = loglevel.getLogger('RowingEngine')
 
-function createFlywheel (rowerSettings) {
+export function createFlywheel (rowerSettings) {
   const angularDisplacementPerImpulse = (2.0 * Math.PI) / rowerSettings.numOfImpulsesPerRevolution
   const flankLength = rowerSettings.flankLength
   const minimumDragFactorSamples = Math.floor(rowerSettings.minimumRecoveryTime / rowerSettings.maximumTimeBetweenImpulses)
   const minumumTorqueBeforeStroke = rowerSettings.minumumForceBeforeStroke * (rowerSettings.sprocketRadius / 100)
+  const minimumAngularVelocity = angularDisplacementPerImpulse / rowerSettings.maximumTimeBetweenImpulses
   const currentDt = createStreamFilter(rowerSettings.smoothing, rowerSettings.maximumTimeBetweenImpulses)
-  const _deltaTime = createOLSLinearSeries(flankLength)
+  const _deltaTime = createTSLinearSeries(flankLength)
   const _angularDistance = createTSQuadraticSeries(flankLength)
-  const _angularVelocityMatrix = []
-  const _angularAccelerationMatrix = []
   const drag = createWeighedSeries(rowerSettings.dragFactorSmoothing, (rowerSettings.dragFactor / 1000000))
   const recoveryDeltaTime = createTSLinearSeries()
   const strokedetectionMinimalGoodnessOfFit = rowerSettings.minimumStrokeQuality
   const minumumRecoverySlope = createWeighedSeries(rowerSettings.dragFactorSmoothing, rowerSettings.minumumRecoverySlope)
+  let _angularVelocityMatrix = []
+  let _angularAccelerationMatrix = []
   let _deltaTimeBeforeFlank
   let _angularVelocityAtBeginFlank
   let _angularVelocityBeforeFlank
@@ -62,8 +62,8 @@ function createFlywheel (rowerSettings) {
   function pushValue (dataPoint) {
     if (isNaN(dataPoint) || dataPoint < 0 || dataPoint > rowerSettings.maximumStrokeTimeBeforePause) {
       // This typicaly happends after a pause, we need to fix this as it throws off all time calculations
-      log.debug(`*** WARNING: currentDt of ${dataPoint} sec isn't between 0 and maximumStrokeTimeBeforePause (${rowerSettings.maximumStrokeTimeBeforePause} sec)`)
-      dataPoint = currentDt.clean()
+      log.debug(`*** WARNING: currentDt of ${dataPoint} sec isn't between 0 and maximumStrokeTimeBeforePause (${rowerSettings.maximumStrokeTimeBeforePause} sec), vakue skipped`)
+      return
     }
 
     if (dataPoint > rowerSettings.maximumTimeBetweenImpulses && maintainMetrics) {
@@ -83,7 +83,7 @@ function createFlywheel (rowerSettings) {
       // Also we nend feed the Drag calculation. We need to do this, BEFORE the array shifts, as the valueAtSeriesBeginvalue
       // value before the shift is certain to be part of a specific rowing phase (i.e. Drive or Recovery), once the buffer is filled completely
       totalNumberOfImpulses += 1
-      _deltaTimeBeforeFlank = _deltaTime.yAtSeriesBegin()
+      _deltaTimeBeforeFlank = _deltaTime.Y.atSeriesBegin()
       totalTimeSpinning += _deltaTimeBeforeFlank
       _angularVelocityBeforeFlank = _angularVelocityAtBeginFlank
       _angularAccelerationBeforeFlank = _angularAccelerationAtBeginFlank
@@ -101,7 +101,7 @@ function createFlywheel (rowerSettings) {
     }
 
     // Let's feed the stroke detection algorithm
-    // Please note that deltaTime MUST use dirty data to be ale to use the OLS algorithms effictively (Otherwise the Goodness of Fit can't be used as a filter!)
+    // Please note that deltaTime MUST use dirty data to be ale to use the regression algorithms effictively (Otherwise the Goodness of Fit can't be used as a filter!)
     currentRawTime += currentDt.raw()
     currentAngularDistance += angularDisplacementPerImpulse
     _deltaTime.push(currentRawTime, currentDt.raw())
@@ -228,9 +228,9 @@ function createFlywheel (rowerSettings) {
   function isDwelling () {
     // Check if the flywheel is spinning down beyond a recovery phase indicating that the rower has stopped rowing
     // We conclude this based on
-    // * A decelerating flywheel as the slope of the CurrentDt's goes up
-    // * All CurrentDt's in the flank are above the maximum
-    if (_deltaTime.slope() > 0 && deltaTimesAbove(rowerSettings.maximumTimeBetweenImpulses)) {
+    // * The angular velocity at the begin of the flank is above the minimum angular velocity (dependent on maximumTimeBetweenImpulses)
+    // * The entire flank has a positive trend, i.e. the flywheel is decelerating consistent with the dragforce being present
+    if (_angularVelocityAtBeginFlank < minimumAngularVelocity && deltaTimeSlopeAbove(minumumRecoverySlope.weighedAverage())) {
       return true
     } else {
       return false
@@ -238,9 +238,9 @@ function createFlywheel (rowerSettings) {
   }
 
   function isAboveMinimumSpeed () {
-    // Check if the flywheel has reached its minimum speed. We conclude this based on all CurrentDt's in the flank are below
-    // the maximum, indicating a sufficiently fast flywheel
-    if (deltaTimesEqualorBelow(rowerSettings.maximumTimeBetweenImpulses)) {
+    // Check if the flywheel has reached its minimum speed. We conclude this based on the first element in the flank
+    // as this angular velocity is created by all curves that are in that flank and having an acceleration in the rest of the flank
+    if (_angularVelocityAtBeginFlank >= minimumAngularVelocity) {
       return true
     } else {
       return false
@@ -248,8 +248,9 @@ function createFlywheel (rowerSettings) {
   }
 
   function isUnpowered () {
-    if (deltaTimeSlopeAbove(minumumRecoverySlope.weighedAverage()) && torqueAbsent() && _deltaTime.length() >= flankLength) {
-      // We reached the minimum number of increasing currentDt values
+    // We consider the flywheel unpowered when there is an acceleration consistent with the drag being the only forces AND no torque being seen
+    // As in the first stroke drag is unreliable for automatic drag updating machines, torque can't be used when drag indicates it is unreliable for these machines
+    if (deltaTimeSlopeAbove(minumumRecoverySlope.weighedAverage()) && (torqueAbsent() || (rowerSettings.autoAdjustDragFactor && !drag.reliable()))) {
       return true
     } else {
       return false
@@ -257,23 +258,7 @@ function createFlywheel (rowerSettings) {
   }
 
   function isPowered () {
-    if ((deltaTimeSlopeBelow(minumumRecoverySlope.weighedAverage()) && torquePresent()) || _deltaTime.length() < flankLength) {
-      return true
-    } else {
-      return false
-    }
-  }
-
-  function deltaTimesAbove (threshold) {
-    if (_deltaTime.minimumY() >= threshold && _deltaTime.length() >= flankLength) {
-      return true
-    } else {
-      return false
-    }
-  }
-
-  function deltaTimesEqualorBelow (threshold) {
-    if (_deltaTime.maximumY() <= threshold && _deltaTime.length() >= flankLength) {
+    if (deltaTimeSlopeBelow(minumumRecoverySlope.weighedAverage()) && torquePresent()) {
       return true
     } else {
       return false
@@ -284,6 +269,7 @@ function createFlywheel (rowerSettings) {
     // This is a typical indication that the flywheel is accelerating. We use the slope of successive currentDt's
     // A (more) negative slope indicates a powered flywheel. When set to 0, it determines whether the DeltaT's are decreasing
     // When set to a value below 0, it will become more stringent. In automatic, a percentage of the current slope (i.e. dragfactor) is used
+    // Please note, as this acceleration isn't linear, _deltaTime.goodnessOfFit() will not be good by definition, so we need omit it
     if (_deltaTime.slope() < threshold && _deltaTime.length() >= flankLength) {
       return true
     } else {
@@ -304,8 +290,8 @@ function createFlywheel (rowerSettings) {
   }
 
   function torquePresent () {
-    // This is a typical indication that the flywheel is decelerating which might work on some machines: successive currentDt's are increasing
-    if (_torqueAtBeginFlank > minumumTorqueBeforeStroke) {
+    // This is a typical indication that the flywheel is accelerating: the torque is above a certain threshold (so a force is present on the handle)
+    if (_torqueAtBeginFlank >= minumumTorqueBeforeStroke) {
       return true
     } else {
       return false
@@ -313,7 +299,10 @@ function createFlywheel (rowerSettings) {
   }
 
   function torqueAbsent () {
-    // This is a typical indication that the flywheel is Accelerating which might work on some machines: successive currentDt's are decreasing
+    // This is a typical indication that the flywheel is decelerating: the torque is below a certain threshold (so a force is absent on the handle)
+    // We need to consider the situation rowerSettings.autoAdjustDragFactor && !drag.reliable() as a high default dragfactor (as set via config) blocks the
+    // detection of the first recovery based on Torque, and thus the calculation of the true dragfactor in that setting.
+    // This let the recovery detection fall back onto slope-based stroke detection only for the first stroke (until drag is calculated reliably)
     if (_torqueAtBeginFlank < minumumTorqueBeforeStroke) {
       return true
     } else {
@@ -337,6 +326,10 @@ function createFlywheel (rowerSettings) {
     currentCleanTime = 0
     currentRawTime = 0
     currentAngularDistance = 0
+    _angularVelocityMatrix = null
+    _angularVelocityMatrix = []
+    _angularAccelerationMatrix = null
+    _angularAccelerationMatrix = []
     _deltaTime.push(0, 0)
     _angularDistance.push(0, 0)
     _deltaTimeBeforeFlank = 0
@@ -366,5 +359,3 @@ function createFlywheel (rowerSettings) {
     reset
   }
 }
-
-export { createFlywheel }
