@@ -84,7 +84,7 @@ export default {
   // Selects the AN+ that is broadcasted to external peripherals and apps. Supported modes:
   // - FE: ANT+ Fitness Equipment
   // - OFF: Turns Bluetooth advertisement off
-  antplusMode: 'OFF',
+  antPlusMode: 'OFF',
 
   // Selects the heart rate monitor mode. Supported modes:
   // - BLE: Use Bluetooth Low Energy to connect Heart Rate Monitor (Will currently connect to the first device found)
@@ -109,7 +109,10 @@ export default {
   // Interval between updates of the bluetooth devices (miliseconds)
   // Advised is to update at least once per second, as consumers expect this interval
   // Some apps, like EXR like a more frequent interval of 200 ms to better sync the stroke
-  peripheralUpdateInterval: 1000,
+  ftmsUpdateInterval: 1000,
+
+  // Interval between updates of the clients using PM5 Bluetooth profile (miliseconds)
+  pm5UpdateInterval: 1000,
 
   // The number of stroke phases (i.e. Drive or Recovery) used to smoothen the data displayed on your
   // screens (i.e. the monitor, but also bluetooth devices, etc.) and recorded data. A nice smooth experience is found at 6
@@ -121,8 +124,11 @@ export default {
   // currently this directory holds the recorded training sessions
   dataDirectory: 'data',
 
-  // Stores the training sessions as TCX files
+  // Stores the training sessions as Garmin TCX files
   createTcxFiles: true,
+
+  // Stores the training sessions as Garmin fit files
+  createFitFiles: true,
 
   // Stores the (in-)stroke data in OpenRowingData CSV files
   createRowingDataFiles: true,
@@ -135,6 +141,9 @@ export default {
   // Some training tools can directly work with gzipped tcx file, however for most training websites
   // you will have to unzip the files before uploading
   gzipTcxFiles: false,
+
+  // Apply gzip compression to the recorded fit training sessions file (fit.gz)
+  gzipFitFiles: false,
 
   // Apply gzip compression to the raw sensor data recording files (csv.gz)
   gzipRawDataFiles: true,

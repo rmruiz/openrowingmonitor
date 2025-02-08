@@ -1,6 +1,6 @@
 'use strict'
 /*
-  Open Rowing Monitor, https://github.com/laberning/openrowingmonitor
+  Open Rowing Monitor, https://github.com/JaapvanEkris/openrowingmonitor
 
   This keeps an array, which we can ask for an moving average
 
@@ -15,9 +15,11 @@ export function createStreamFilter (maxLength, defaultValue) {
   let cleanDatapoint = defaultValue
 
   function push (dataPoint) {
-    lastRawDatapoint = dataPoint
-    dataPoints.push(dataPoint)
-    cleanDatapoint = dataPoints.median()
+    if (dataPoint !== undefined && !isNaN(dataPoint)) {
+      lastRawDatapoint = dataPoint
+      dataPoints.push(dataPoint)
+      cleanDatapoint = dataPoints.median()
+    }
   }
 
   function raw () {

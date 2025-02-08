@@ -19,7 +19,7 @@
   The Theil-Senn implementation uses concepts that are described here:
   https://stats.stackexchange.com/questions/317777/theil-sen-estimator-for-polynomial,
 
-  The determination of the coefficients is based on the math descirbed here:
+  The determination of the coefficients is based on the Lagrange interpolation, which is descirbed here:
   https://www.quora.com/How-do-I-find-a-quadratic-equation-from-points/answer/Robert-Paxson,
   https://www.physicsforums.com/threads/quadratic-equation-from-3-points.404174/
 */
@@ -44,6 +44,7 @@ export function createTSQuadraticSeries (maxSeriesLength = 0) {
   function push (x, y) {
     // Invariant: A contains all a's (as in the general formula y = a * x^2 + b * x + c)
     // Where the a's are labeled in the Binary Search Tree with their Xi when they BEGIN in the point (Xi, Yi)
+    if (x === undefined || isNaN(x) || y === undefined || isNaN(y)) { return }
 
     if (maxSeriesLength > 0 && X.length() >= maxSeriesLength) {
       // The maximum of the array has been reached, so when pushing the new datapoint (x,y), the array will get shifted,

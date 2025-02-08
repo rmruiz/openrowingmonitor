@@ -1,6 +1,8 @@
 'use strict'
-
-import bleno from '@abandonware/bleno'
+/*
+  Open Rowing Monitor, https://github.com/JaapvanEkris/openrowingmonitor
+*/
+import bleno from '@stoprocent/bleno'
 import log from 'loglevel'
 
 export default class StaticNotifyCharacteristic extends bleno.Characteristic {

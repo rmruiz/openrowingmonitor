@@ -1,11 +1,10 @@
 'use strict'
 /*
-  Open Rowing Monitor, https://github.com/laberning/openrowingmonitor
+  Open Rowing Monitor, https://github.com/JaapvanEkris/openrowingmonitor
 
   This manager creates the different Bluetooth Low Energy (BLE) Peripherals and allows
   switching between them
 */
-import config from '../tools/ConfigManager.js'
 import { createFtmsPeripheral } from './ble/FtmsPeripheral.js'
 import { createPm5Peripheral } from './ble/Pm5Peripheral.js'
 import log from 'loglevel'
@@ -20,7 +19,8 @@ import { createFEPeripheral } from './ant/FEPeripheral.js'
 const bleModes = ['FTMS', 'FTMSBIKE', 'PM5', 'CSC', 'CPS', 'OFF']
 const antModes = ['FE', 'OFF']
 const hrmModes = ['ANT', 'BLE', 'OFF']
-function createPeripheralManager () {
+
+export function createPeripheralManager (config) {
   const emitter = new EventEmitter()
   let _antManager
   let blePeripheral
@@ -31,55 +31,86 @@ function createPeripheralManager () {
 
   let hrmPeripheral
   let hrmMode
+  let hrmWatchdogTimer
+  let lastHrmData = {
+    heartrate: undefined,
+    heartRateBatteryLevel: undefined
+  }
 
   let isPeripheralChangeInProgress = false
 
   setupPeripherals()
 
   async function setupPeripherals () {
-    await createBlePeripheral(config.bluetoothMode)
     await createHrmPeripheral(config.heartRateMode)
-    await createAntPeripheral(config.antplusMode)
+    if (config.heartRateMode === 'BLE') { await delay(10000) } // WORKAROUND for BLE-Fix. ToDo: remove the need for this delay in the bluetooth startup completely
+    await createBlePeripheral(config.bluetoothMode)
+    await createAntPeripheral(config.antPlusMode)
   }
 
-  function getBlePeripheral () {
-    return blePeripheral
-  }
-
-  function getBlePeripheralMode () {
-    return bleMode
-  }
-
-  function getAntPeripheral () {
-    return antPeripheral
-  }
-
-  function getAntPeripheralMode () {
-    return antMode
-  }
-
-  function getHrmPeripheral () {
-    return hrmPeripheral
-  }
-
-  function getHrmPeripheralMode () {
-    return hrmMode
+  // This function handles all incomming commands. As all commands are broadasted to all application parts,
+  // we need to filter here what the PeripheralManager will react to and what it will ignore
+  async function handleCommand (commandName, data, client) {
+    switch (commandName) {
+      case ('updateIntervalSettings'):
+        break
+      case ('start'):
+        break
+      case ('startOrResume'):
+        notifyStatus({ name: 'startedOrResumedByUser' })
+        break
+      case ('pause'):
+        notifyStatus({ name: 'stoppedOrPausedByUser' })
+        break
+      case ('stop'):
+        notifyStatus({ name: 'stoppedOrPausedByUser' })
+        break
+      case ('requestControl'):
+        break
+      case ('reset'):
+        notifyStatus({ name: 'reset' })
+        break
+      case 'switchBlePeripheralMode':
+        switchBlePeripheralMode()
+        break
+      case 'switchAntPeripheralMode':
+        switchAntPeripheralMode()
+        break
+      case 'switchHrmMode':
+        switchHrmMode()
+        break
+      case 'refreshPeripheralConfig':
+        break
+      case 'authorizeStrava':
+        break
+      case 'uploadTraining':
+        break
+      case 'stravaAuthorizationCode':
+        break
+      case 'shutdown':
+        await shutdownAllPeripherals()
+        break
+      default:
+        log.error(`PeripheralManager: Recieved unknown command: ${commandName}`)
+    }
   }
 
   function switchBlePeripheralMode (newMode) {
     if (isPeripheralChangeInProgress) return
     isPeripheralChangeInProgress = true
-    // if now mode was passed, select the next one from the list
+    // if no mode was passed, select the next one from the list
     if (newMode === undefined) {
       newMode = bleModes[(bleModes.indexOf(bleMode) + 1) % bleModes.length]
     }
+    config.bluetoothMode = newMode
     createBlePeripheral(newMode)
     isPeripheralChangeInProgress = false
   }
 
-  function notifyMetrics (type, metrics) {
-    if (bleMode !== 'OFF') { blePeripheral?.notifyData(type, metrics) }
-    if (antMode !== 'OFF') { antPeripheral?.notifyData(type, metrics) }
+  function notifyMetrics (metrics) {
+    addHeartRateToMetrics(metrics)
+    if (bleMode !== 'OFF') { blePeripheral?.notifyData(metrics) }
+    if (antMode !== 'OFF') { antPeripheral?.notifyData(metrics) }
   }
 
   function notifyStatus (status) {
@@ -92,42 +123,32 @@ function createPeripheralManager () {
       await blePeripheral?.destroy()
       blePeripheral = undefined
     }
-
     switch (newMode) {
       case 'PM5':
         log.info('bluetooth profile: Concept2 PM5')
-        blePeripheral = createPm5Peripheral(controlCallback)
+        blePeripheral = createPm5Peripheral(config)
         bleMode = 'PM5'
         break
-
       case 'FTMSBIKE':
         log.info('bluetooth profile: FTMS Indoor Bike')
-        blePeripheral = createFtmsPeripheral(controlCallback, {
-          simulateIndoorBike: true
-        })
+        blePeripheral = createFtmsPeripheral(controlCallback, config, true)
         bleMode = 'FTMSBIKE'
         break
-
       case 'CSC':
         log.info('bluetooth profile: Cycling Speed and Cadence')
-        blePeripheral = createCscPeripheral()
+        blePeripheral = createCscPeripheral(config)
         bleMode = 'CSC'
         break
-
       case 'CPS':
         log.info('bluetooth profile: Cycling Power Meter')
-        blePeripheral = createCpsPeripheral()
+        blePeripheral = createCpsPeripheral(config)
         bleMode = 'CPS'
         break
-
       case 'FTMS':
         log.info('bluetooth profile: FTMS Rower')
-        blePeripheral = createFtmsPeripheral(controlCallback, {
-          simulateIndoorBike: false
-        })
+        blePeripheral = createFtmsPeripheral(controlCallback, config, false)
         bleMode = 'FTMS'
         break
-
       default:
         log.info('bluetooth profile: Off')
         bleMode = 'OFF'
@@ -136,8 +157,9 @@ function createPeripheralManager () {
 
     emitter.emit('control', {
       req: {
-        name: 'blePeripheralMode',
-        peripheralMode: bleMode
+        name: 'refreshPeripheralConfig',
+        data: {},
+        client: null
       }
     })
   }
@@ -148,6 +170,7 @@ function createPeripheralManager () {
     if (newMode === undefined) {
       newMode = antModes[(antModes.indexOf(antMode) + 1) % antModes.length]
     }
+    config.antPlusMode = newMode
     createAntPeripheral(newMode)
     isPeripheralChangeInProgress = false
   }
@@ -189,8 +212,9 @@ function createPeripheralManager () {
 
     emitter.emit('control', {
       req: {
-        name: 'antPeripheralMode',
-        peripheralMode: antMode
+        name: 'refreshPeripheralConfig',
+        data: {},
+        client: null
       }
     })
   }
@@ -201,6 +225,7 @@ function createPeripheralManager () {
     if (newMode === undefined) {
       newMode = hrmModes[(hrmModes.indexOf(hrmMode) + 1) % hrmModes.length]
     }
+    config.heartRateMode = newMode
     createHrmPeripheral(newMode)
     isPeripheralChangeInProgress = false
   }
@@ -248,16 +273,50 @@ function createPeripheralManager () {
 
     if (hrmMode.toLocaleLowerCase() !== 'OFF'.toLocaleLowerCase()) {
       hrmPeripheral.on('heartRateMeasurement', (heartRateMeasurement) => {
-        emitter.emit('heartRateMeasurement', heartRateMeasurement)
+        // Clear the HRM watchdog as new HRM data has been recieved
+        clearTimeout(hrmWatchdogTimer)
+        // Make sure we check the HRM validity here, so the rest of the app doesn't have to
+        if (heartRateMeasurement.heartrate !== undefined && config.userSettings.restingHR <= heartRateMeasurement.heartrate && heartRateMeasurement.heartrate <= config.userSettings.maxHR) {
+          lastHrmData = { ...heartRateMeasurement }
+          emitter.emit('heartRateMeasurement', heartRateMeasurement)
+        } else {
+          log.info(`PeripheralManager: Heartrate value of ${heartRateMeasurement.heartrate} was outside valid range, setting it to undefined`)
+          heartRateMeasurement.heartrate = undefined
+          heartRateMeasurement.heartRateBatteryLevel = undefined
+          emitter.emit('heartRateMeasurement', heartRateMeasurement)
+        }
+        // Re-arm the HRM watchdog to guarantee failsafe behaviour: after 6 seconds of no new HRM data, it will be invalidated
+        hrmWatchdogTimer = setTimeout(onHRMWatchdogTimeout, 6000)
       })
     }
 
     emitter.emit('control', {
       req: {
-        name: 'hrmPeripheralMode',
-        peripheralMode: hrmMode
+        name: 'refreshPeripheralConfig',
+        data: {},
+        client: null
       }
     })
+  }
+
+  function onHRMWatchdogTimeout () {
+    lastHrmData.heartrate = undefined
+    lastHrmData.heartRateBatteryLevel = undefined
+    log.info('PeripheralManager: Heartrate data has not been updated in 6 seconds, setting it to undefined')
+    emitter.emit('heartRateMeasurement', lastHrmData)
+  }
+
+  function addHeartRateToMetrics (metrics) {
+    if (lastHrmData.heartrate !== undefined) {
+      metrics.heartrate = lastHrmData.heartrate
+    } else {
+      metrics.heartrate = undefined
+    }
+    if (lastHrmData.heartRateBatteryLevel !== undefined) {
+      metrics.heartRateBatteryLevel = lastHrmData.heartRateBatteryLevel
+    } else {
+      metrics.heartRateBatteryLevel = undefined
+    }
   }
 
   function controlCallback (event) {
@@ -278,19 +337,14 @@ function createPeripheralManager () {
   }
 
   return Object.assign(emitter, {
-    shutdownAllPeripherals,
-    getBlePeripheral,
-    getBlePeripheralMode,
-    getAntPeripheral,
-    getAntPeripheralMode,
-    getHrmPeripheral,
-    getHrmPeripheralMode,
-    switchHrmMode,
-    switchBlePeripheralMode,
-    switchAntPeripheralMode,
+    handleCommand,
     notifyMetrics,
     notifyStatus
   })
 }
 
-export { createPeripheralManager }
+function delay (ms) {
+  return new Promise(resolve => {
+    setTimeout(() => resolve(), ms)
+  })
+}

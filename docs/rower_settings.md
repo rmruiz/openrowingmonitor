@@ -111,9 +111,7 @@ This shows that OpenRowingMonitor is running, and that bluetooth and the webserv
 
 ## Making sure the hardware is connected correctly and works as intended
 
-Because any system follows the mantra "Garbage in is garbage out", we first make sure that the signals OpenRowingMonitor recieves are decent. First we check the physical properties, then the electrical properties and last we check the quality of the incoming signal.
-
-**Please check and fix any mechanical/electrical/quality issues before proceeding, as the subsequent steps depend on a signal with decent quality!!**
+Because any system follows the mantra "Garbage in is garbage out", we first make sure that the signals OpenRowingMonitor recieves are decent. First we check the physical properties, then the electrical properties and last we check the quality of the incoming signal. As this is quite a critical step, please make sure you fixed any mechanical/electrical/quality issues before proceeding, as the subsequent steps in this manual depend on a signal with decent quality!!
 
 ### Checking the physical properties of the rower
 
@@ -123,7 +121,10 @@ If you are uncomfortable modifying you machine, you can still make OpenRowingMon
 
 ### Checking the electrical properties of the rower
 
-Before you physically connect anything to anything else, **check the electric properties of the rower** you are connecting to. Skipping this might destroy your Raspberry Pi as some rowers are known to exceed the Raspberry Pi electrical properties. For example, a Concept 2 RowErg provides 15V signals to the monitor, which will destroy the GPIO-ports. Other rowers provide signals aren't directly detectable by the raspberry Pi. For example, the Concept 2 Model C provides 0.2V pulses, thus staying below the detectable 1.8V treshold that the Raspberry Pi uses. Using a scope or a voltmeter is highly recommended. Please observe that the maximum input a Raspberry Pi GPIO pin can handle is 3.3V and 0.5A, and it will switch at 1.8V (see [this overview of the Raspberry Pi electrical properties](https://raspberrypi.stackexchange.com/questions/3209/what-are-the-min-max-voltage-current-values-the-gpio-pins-can-handle)). In our [GitHub Discussions](https://github.com/laberning/openrowingmonitor/discussions) there are some people who are brilliant with electrical connections, so don't be affraid to ask for help there. When you have a working solution, please report it so that we can include it in the documentation, allowing us to help others.
+> [!CAUTION]
+> Before you physically connect anything to anything else, **check the electric properties of the rower** you are connecting to. Skipping this might destroy your Raspberry Pi as some rowers are known to exceed the Raspberry Pi electrical properties.
+
+For example, a Concept 2 RowErg provides 15V signals to the monitor, which will destroy the GPIO-ports. Other rowers provide signals aren't directly detectable by the raspberry Pi. For example, the Concept 2 Model C provides 0.2V pulses, thus staying below the detectable 1.8V treshold that the Raspberry Pi uses. Using a scope or a voltmeter is highly recommended. Please observe that the maximum input a Raspberry Pi GPIO pin can handle is 3.3V and 0.5A, and it will switch at 1.8V (see [this overview of the Raspberry Pi electrical properties](https://raspberrypi.stackexchange.com/questions/3209/what-are-the-min-max-voltage-current-values-the-gpio-pins-can-handle)). In our [GitHub Discussions](https://github.com/laberning/openrowingmonitor/discussions) there are some people who are brilliant with electrical connections, so don't be affraid to ask for help there. When you have a working solution, please report it so that we can include it in the documentation, allowing us to help others.
 
 ### Checking signal and measurement quality
 
@@ -156,7 +157,7 @@ When the line goes up, the time between impulses from the flywheel goes up, and 
 
 #### Fixing switch bounce
 
-A specific issue to be aware of is *switch bounce*, which typically is seen as a valid signal followed by a very short spike. When looking at a set of plotted signals in Excel, it manafests itself as the following:
+A specific issue to be aware of is *switch bounce*, which typically is seen as a valid signal followed by a very short spike. Dirst step is to activate raw recording and row at least ten seconds. OpenRowingMonitor will produce a csv-file. When looking at a set of plotted signals in Excel (please note: OpenRowingMonitor records in US-notation, so please replace all decimal points with commas if you are not US-based), it manafests itself as the following:
 
 <img src="img/CurrentDt_With_Lots_Of_Bounce.jpg" alt="A scatter plot showing the typical progress of currentDt with switch bounce" width="700">
 
@@ -175,7 +176,8 @@ Another specific issue to watch out for are systemic errors in the magnet placem
 
 In some cases, changing the magnet placing or orientation can fix this completely (see for example [this discussion](https://github.com/laberning/openrowingmonitor/discussions/87)), which yields very good results and near-perfect data. Sometimes, you can't fix this or you are unwilling to physically modify the machine. OpenRowingMonitor can handle this kind of systematic error, as long as the *flankLength* (described later) is set to at least two full rotations (in this case, 12 impulses *flankLength* for a 6 magnet machine).
 
-**Please fix any mechanical/electrical/quality issues before proceeding, as the subsequent steps depend on a signal with decent quality!!**
+> [!IMPORTANT]
+> Please fix any mechanical/electrical/quality issues before proceeding, as the subsequent steps depend on a signal with decent quality
 
 ## Critical parameters you must change or review for noise reduction
 
@@ -187,7 +189,7 @@ When you look at the raw dump of *CurrentDT*, it should provide a nice curve. Wh
 
 Another option is to change the *gpioPollingInterval*, which determines how accurate the measurements are. Please note that increasing this will increase the CPU load, so setting it to 1us might come at a price. Setting this from the default value of 5us to 1us might increase precission, but it could disrupt the entire process as the CPU might get overloeded. So experimenting with this value is key.
 
-**gpioTriggeredFlank** and **gpioMinimumPulseLength** are typically used to prevent bounces in the signal: magnets passing could trigger a reed switch twice (as described above). The logs provide help here, as the logs indicate abnormal short and long times between impulses (via the minimumTimeBetweenImpulses and maximumTimeBetweenImpulses settings). Please note that during a first stroke, the **CurrentDt** values obviously are longer.
+**gpioTriggeredFlank** and **gpioMinimumPulseLength** are typically used to prevent bounces in the signal: magnets passing could trigger a reed switch twice (as described above). The logs provide help here, as the logs indicate abnormal short and long times between impulses (via the minimumTimeBetweenImpulses and maximumTimeBetweenImpulses settings). Please note that during a first stroke, the **CurrentDt** values obviously are longer. Switching *gpioTriggeredFlank* from 'up' to 'down' or vice verse is known to fix switch bounce. *gpioMinimumPulseLength* is also an approach, basically preventing short spikes. It is adviced to first see what *gpioTriggeredFlank* does, before you start surpressing signals via *gpioMinimumPulseLength*.
 
 ### Setting minimumTimeBetweenImpulses and maximumTimeBetweenImpulses
 
@@ -212,6 +214,8 @@ OpenRowingMonitor pauses/stops the row when:
 * the flywheel has a decelerating trend throughout the flank.
 
 So setting the value for *maximumTimeBetweenImpulses* too high might block this behaviour as there aren't enough measurements to fill the flank. Although most air-based rowers have a spin down time of around 2 minutes, water rowers typically stop quite fast (think seconds). Therefore, especially the stop behaviour of water rowers requires a bit more attention. Again looking at the behaviour of the curve and the raw data might help here: looking how many residual samples follow after *maximumTimeBetweenImpulses* is exceeded (there should be more than *flankLength*) and how much time it spans since the last drive (exceeding *maximumStrokeTimeBeforePause*) is critical here.
+
+Please note that there is a watchdog on the presence of new *currentDt* messages during an active rowing session: when the last recieved value is *maximumStrokeTimeBeforePause* ago, it will force a hard stop of the session. This watchdog will not be triggered during normal rowing sessions, but might be needed for specific magnetic resistance based machines as they tend to stop extremely fast, cutting the engine off new *currentDt* values (i.e. before the normal *maximumStrokeTimeBeforePause* expires while respecting the above conditions).
 
 ### Review smoothing
 
@@ -248,8 +252,8 @@ To detect strokes, OpenRowingMonitor uses the following criteria before attempti
 
 The **flankLength** and **minumumRecoverySlope** settings determine the condition when the stroke detection is sufficiently confident that the stroke has started/ended. In essence, the stroke detection looks for a consecutive increasing/decreasing impulse lengths (with slope **minumumRecoverySlope**), and the **flankLength** determines how many consecutive flanks have to be seen before the stroke detection considers a stroke to begin or end. Setting these paramters requires some trial and error:
 
-* **minumumRecoverySlope** can be set to 0, where OpenRowingMonitor will use a quite robust selection on an accelerating or decelerating flywheel. This is recomended as a starting point for getting stroke detection to work. It can be further optimised later (see the later section on advanced stroke detection);
-* Generally, a *flankLength* of 3 to 4 typically works. The technical minimum is 3, the maximum is limited by CPU-time. Please note that making the flank longer does *not* change your measurement in any way: the algorithms always rely on the beginning of the flank, not at the current end. If any, increasing the *flanklength* has the side-effect that some calculations are performed with more rigour, making them more precise as they get more data. Please note that the rower itself might limit the *flankLength*: some rowers only have 4 or 5 datapoints in a drive phase, naturally limiting the number of datapoints that can be used for stroke phase detection. Increasing this number too far (beyond a significant part of the stroke) will remove the fluctuations in the flywheel speed needed for stroke detections, so there is a practical upper limit to what the value of *flankLength* can be for a specific rower. Please note that a longer *flankLength* also requires more CPU time, where the calculation grows exponentially as *flankLength* becomes longer. On a Raspberry Pi 4B, a *flankLength* of 18 has been succesfully used without issue. What the practical limit on a Rapberry Pi Zero 2 W is, is still a matter of investigation.
+* **minumumRecoverySlope** can be set to 0, where OpenRowingMonitor will essentially use a quite robust selection on an accelerating or decelerating flywheel. This is recomended as a starting point for getting stroke detection to work. It can be further optimised later (see the later section on advanced stroke detection);
+* Generally, a *flankLength* of twice the number of magnets typically works. The technical minimum is 3. The maximum is limited by CPU-time as the algorithms used become exponentially more CPU-intensive as the *flankLength* increases. On a Raspberry Pi 4B, a *flankLength* of 18 has been succesfully used without issue. What the practical limit on a Rapberry Pi Zero 2 W is, is still a matter of investigation. Increasing the *flankLength* does *not* change your measurement in any way: the algorithms always rely on the beginning of the flank, not at the current end. If any, increasing the *flanklength* has the side-effect that some calculations are performed with more rigour, making them more precise as they get more data (unlike smoothing filters). Also note that the rower itself might limit the *flankLength*: some rowers only have 4 or 5 datapoints in a drive phase, naturally limiting the number of datapoints that can be used for stroke phase detection. Increasing this number too far (beyond a significant part of the stroke) will remove the fluctuations in the flywheel speed needed for stroke detections, so there is a practical upper limit to what the value of *flankLength* can be for a specific rower.
 
 To make life a bit easier, it is possible to replay a raw recording of a previous rowing session. To do this, uncomment and modify the following lines in `server.js`:
 

@@ -1,20 +1,30 @@
 'use strict'
 /*
-  Open Rowing Monitor, https://github.com/laberning/openrowingmonitor
+  Open Rowing Monitor, https://github.com/JaapvanEkris/openrowingmonitor
 
   Creates a Bluetooth Low Energy (BLE) Peripheral with all the Services that are required for
   a Cycling Power Profile
 */
-import bleno from '@abandonware/bleno'
-import config from '../../tools/ConfigManager.js'
+import bleno from '@stoprocent/bleno'
 import log from 'loglevel'
 import CyclingPowerService from './cps/CyclingPowerMeterService.js'
 import DeviceInformationService from './common/DeviceInformationService.js'
 import AdvertisingDataBuilder from './common/AdvertisingDataBuilder.js'
+import { bleBroadcastInterval, bleMinimumKnowDataUpdateInterval } from '../PeripheralConstants.js'
 
-function createCpsPeripheral () {
+export function createCpsPeripheral (config) {
   const peripheralName = `${config.ftmsRowerPeripheralName} (CPS)`
   const cyclingPowerService = new CyclingPowerService((event) => log.debug('CPS Control Point', event))
+  let lastKnownMetrics = {
+    sessiontype: 'JustRow',
+    sessionStatus: 'WaitingForStart',
+    strokeState: 'WaitingForDrive',
+    totalMovingTime: 0,
+    totalLinearDistance: 0,
+    dragFactor: config.rowerSettings.dragFactor,
+    lastDataUpdateTime: Date.now()
+  }
+  let timer = setTimeout(onBroadcastInterval, bleBroadcastInterval)
 
   bleno.on('stateChange', (state) => {
     triggerAdvertising(state)
@@ -62,6 +72,7 @@ function createCpsPeripheral () {
   })
 
   function destroy () {
+    clearTimeout(timer)
     return new Promise((resolve) => {
       bleno.disconnect()
       bleno.removeAllListeners()
@@ -87,9 +98,40 @@ function createCpsPeripheral () {
     }
   }
 
-  function notifyData (type, data) {
-    if (type === 'strokeFinished' || type === 'metricsUpdate') {
-      cyclingPowerService.notifyData(data)
+  // Broadcast the last known metrics
+  function onBroadcastInterval () {
+    cyclingPowerService.notifyData(lastKnownMetrics)
+    timer = setTimeout(onBroadcastInterval, bleBroadcastInterval)
+  }
+
+  // Records the last known rowing metrics to CPS central
+  // As the client calculates its own speed based on time and distance,
+  // we an only update the last known metrics upon a stroke state change to prevent spiky behaviour
+  function notifyData (metrics) {
+    if (metrics.metricsContext === undefined) return
+    switch (true) {
+      case (metrics.metricsContext.isSessionStop):
+        lastKnownMetrics = { ...metrics }
+        clearTimeout(timer)
+        onBroadcastInterval()
+        break
+      case (metrics.metricsContext.isPauseStart):
+        lastKnownMetrics = { ...metrics }
+        clearTimeout(timer)
+        onBroadcastInterval()
+        break
+      case (metrics.metricsContext.isRecoveryStart):
+        lastKnownMetrics = { ...metrics }
+        clearTimeout(timer)
+        onBroadcastInterval()
+        break
+      case (metrics.timestamp - lastKnownMetrics.timestamp >= bleMinimumKnowDataUpdateInterval):
+        lastKnownMetrics = { ...metrics }
+        clearTimeout(timer)
+        onBroadcastInterval()
+        break
+      default:
+        // Do nothing
     }
   }
 
@@ -104,5 +146,3 @@ function createCpsPeripheral () {
     destroy
   }
 }
-
-export { createCpsPeripheral }
