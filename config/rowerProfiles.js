@@ -97,6 +97,33 @@ export default {
     magicConstant: 2.8
   },
 
+  // Virtufit Magnetic Rowing Machine
+  // https://virtufit.nl/wp-content/uploads/2022/01/VirtuFit-Elite-Magnetic-Rowing-Machine-Manual-EN.pdf
+  // aka: Obelix - https://pesaschile.cl/categorias/1162-remo-de-aire-magnetico-lite-series-obelix.html
+  //               https://fedesport.cl/products/remo-de-aire-magnetico-lite-series-obelix
+  virtufit: {
+    numOfImpulsesPerRevolution: 4,
+    // dragFactor: 400, // for setting #13 use 380
+    autoAdjustDragFactor: true,
+    minimumDragQuality: 0.93,
+
+    // minimumRecoverySlope: 0.1, // default: 0.34
+    autoAdjustRecoverySlope: true, // only true if autoAdjustDragFactor is true
+    autoAdjustRecoverySlopeMargin: 0.5,
+
+    // sprocketRadius: 1.4,
+    minimumForceBeforeStroke: 10,
+    flankLength: 4, // mediciones seguidas para considerar cambio de aceleracion
+    // minimumStrokeQuality: 0.34,
+    minimumDriveTime: 0.30, // default: 0.300 - minimum time of the drive phase
+    minimumRecoveryTime: 0.020, // default: 0.900 - minimum time of the recovery phase
+
+    minimumTimeBetweenImpulses: 0.007, // 0.008 from raw data graph (soft rowing, temp setting 13)
+    // maximumTimeBetweenImpulses: 0.3, // 0.26 from raw data graph (soft rowing, temp setting 13)
+    flywheelInertia: 0.015, // best: 0.015
+    maximumStrokeTimeBeforePause: 10.0
+  },
+
   // Cheap Clone of Concept2 RowErg Model D
   // https://zocobodyfit.ro/produs/aparat-de-vaslit-zoco-body-fit-air-rower-pliabil-ecran-lcd-eficient-si-util-negru/
   Generic_Air_Rower: {
